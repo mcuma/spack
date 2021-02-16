@@ -3,6 +3,8 @@
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 import llnl.util.tty as tty
+import llnl.util.filesystem as fs
+import spack.environment as ev
 from spack.util.executable import which
 import spack.cmd.common.deployment as deployment
 
@@ -22,6 +24,9 @@ def setup_parser(subparser):
     subparser.add_argument(
         '--url', action='store', default=None,
         help="url to use if the remote does not already exist")
+    subparser.add_argument(
+        '-e', '--env', action='store', default=None,
+        help="checkout environment instead of Spack source")
     subparser.add_argument(
         'ref', help="git reference to checkout")
 
@@ -66,12 +71,21 @@ def checkout(parser, args):
     global git  # make git available to called methods
     git = which('git', required=True)
 
-    # Always fetch branches
-    branches = map(lambda b: b.strip('* '),
-                   git('branch', output=str, error=str).split('\n'))
-    if ref in branches or not known_commit_or_tag(ref):
-        fetch_remote(remote, url)
+    work_dir = spack.paths.spack_root
+    if ev.exists(args.env):
+        work_dir = ev.read(args.env).path
+    elif ev.is_env_dir(args.env):
+        work_dir = args.env
+    elif args.env:
+        raise ValueError("'%s' is not a Spack environment" % args.env)
 
-    # For branches, ensure we're getting the version from the correct remote
-    full_ref = '%s/%s' % (remote, ref) if ref in branches else ref
-    git('checkout', full_ref)
+    with fs.working_dir(work_dir):
+        # Always fetch branches
+        branches = map(lambda b: b.strip('* '),
+                       git('branch', output=str, error=str).split('\n'))
+        if ref in branches or not known_commit_or_tag(ref):
+            fetch_remote(remote, url)
+
+        # For branches, ensure we're getting the version from the correct remote
+        full_ref = '%s/%s' % (remote, ref) if ref in branches else ref
+        git('checkout', full_ref)
